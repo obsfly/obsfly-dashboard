@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_PASSWORD=password
+      - CLICKHOUSE_USER=default
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  backend:
+    build: ../apps/backend
+    ports:
+      - "8081:8080"
+    environment:
+      - CLICKHOUSE_ADDR=clickhouse:9000
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=password
+    depends_on:
+      - clickhouse
+
+  frontend:
+    build: ../apps/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8081
+    depends_on:
+      - backend

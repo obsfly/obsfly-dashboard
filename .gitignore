@@ -1,0 +1,54 @@
+# ==============================
+# Global ignores
+# ==============================
+.DS_Store
+*.pem
+*.log
+
+# ==============================
+# Frontend (Next.js + Node.js)
+# ==============================
+
+# Node modules
+apps/frontend/node_modules/
+
+# Yarn / PnP
+apps/frontend/.pnp
+apps/frontend/.pnp.*
+apps/frontend/.yarn/*
+!apps/frontend/.yarn/patches
+!apps/frontend/.yarn/plugins
+!apps/frontend/.yarn/releases
+!apps/frontend/.yarn/versions
+
+# Testing
+apps/frontend/coverage/
+
+# Next.js build output
+apps/frontend/.next/
+apps/frontend/out/
+
+# Production build
+apps/frontend/build/
+
+# Debug logs
+apps/frontend/npm-debug.log*
+apps/frontend/yarn-debug.log*
+apps/frontend/yarn-error.log*
+apps/frontend/.pnpm-debug.log*
+
+# Env files
+apps/frontend/.env*
+apps/frontend/.env.local
+apps/frontend/.env.production
+apps/frontend/.env.development
+
+# Vercel
+apps/frontend/.vercel/
+
+# TypeScript build info
+apps/frontend/*.tsbuildinfo
+apps/frontend/next-env.d.ts
+
+# Misc
+apps/frontend/.DS_Store
