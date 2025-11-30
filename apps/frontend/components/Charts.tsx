@@ -1,32 +1,6 @@
 'use client';
 
-import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    LineElement,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend,
-    Filler,
-    ChartOptions,
-} from 'chart.js';
-import { Bar, Line } from 'react-chartjs-2';
-
-// Register Chart.js components
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    LineElement,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend,
-    Filler
-);
+import { Bar, BarChart, Line, LineChart, Area, AreaChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface DataPoint {
     name: string;
@@ -38,226 +12,313 @@ interface ChartProps {
     data: DataPoint[];
     color?: string;
     type?: 'line' | 'bar' | 'area';
+    onItemClick?: (item: DataPoint) => void;
+    unit?: string; // Add unit parameter for proper tooltip formatting
 }
 
-export function SimpleChart({ data, color = '#3b82f6', type = 'bar' }: ChartProps) {
-    // Prepare data for Chart.js
-    const labels = data.map(d => d.name);
-    const values = data.map(d => d.value);
+export function SimpleChart({ data, color = '#8b5cf6', type = 'bar', onItemClick, unit = '' }: ChartProps) {
+    const handleClick = (data: any) => {
+        if (onItemClick && data && data.activePayload && data.activePayload[0]) {
+            onItemClick(data.activePayload[0].payload);
+        }
+    };
 
-    // Create gradient colors for bars
-    const gradientColors = [
-        '#8b5cf6', // purple-500
-        '#a78bfa', // purple-400
-        '#c4b5fd', // purple-300
-        '#ddd6fe', // purple-200
-        '#ede9fe', // purple-100
-    ];
+    const chartConfig = {
+        margin: { top: 5, right: 5, left: -20, bottom: 5 },
+    };
+
+    // Format value with unit
+    const formatValue = (value: number) => {
+        if (!unit) return value.toFixed(1);
+        return `${value.toFixed(1)}${unit}`;
+    };
 
     if (type === 'bar') {
-        const chartData = {
-            labels,
-            datasets: [
-                {
-                    label: 'Latency',
-                    data: values,
-                    backgroundColor: data.map((_, index) => gradientColors[index % gradientColors.length]),
-                    borderRadius: 6,
-                    borderSkipped: false,
-                },
-            ],
-        };
-
-        const barOptions: ChartOptions<'bar'> = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false,
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(17, 24, 39, 0.95)',
-                    titleColor: '#e5e7eb',
-                    bodyColor: '#60a5fa',
-                    borderColor: '#374151',
-                    borderWidth: 1,
-                    padding: 12,
-                    displayColors: false,
-                    callbacks: {
-                        label: function (context) {
-                            const value = context.parsed.y;
-                            if (value === null) return '';
-                            return `Latency: ${value.toFixed(2)}ms`;
-                        }
-                    }
-                },
-            },
-            scales: {
-                x: {
-                    grid: {
-                        display: true,
-                        color: 'rgba(55, 65, 81, 0.3)',
-                        drawTicks: false,
-                    },
-                    ticks: {
-                        color: '#9ca3af',
-                        font: {
-                            size: 11,
-                        },
-                        maxRotation: 45,
-                        minRotation: 45,
-                    },
-                    border: {
-                        display: false,
-                    },
-                },
-                y: {
-                    grid: {
-                        display: true,
-                        color: 'rgba(55, 65, 81, 0.3)',
-                        drawTicks: false,
-                    },
-                    ticks: {
-                        color: '#9ca3af',
-                        font: {
-                            size: 11,
-                        },
-                    },
-                    border: {
-                        display: false,
-                    },
-                    title: {
-                        display: true,
-                        text: 'Latency (ms)',
-                        color: '#9ca3af',
-                        font: {
-                            size: 11,
-                        },
-                    },
-                },
-            },
-        };
-
-        return <Bar data={chartData} options={barOptions} />;
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data} {...chartConfig} onClick={handleClick}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+                    <XAxis
+                        dataKey="name"
+                        stroke="#9ca3af"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        angle={-45}
+                        textAnchor="end"
+                        height={60}
+                    />
+                    <YAxis
+                        stroke="#9ca3af"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => formatValue(value)}
+                    />
+                    <Tooltip
+                        content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                                return (
+                                    <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                        <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                        <p className="text-blue-400 text-sm font-bold">{formatValue(payload[0].value as number)}</p>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        }}
+                    />
+                    <Bar
+                        dataKey="value"
+                        fill={color}
+                        radius={[4, 4, 0, 0]}
+                        className="cursor-pointer"
+                    />
+                </BarChart>
+            </ResponsiveContainer>
+        );
     }
 
-    if (type === 'area' || type === 'line') {
-        const chartData = {
-            labels,
-            datasets: [
-                {
-                    label: 'Value',
-                    data: values,
-                    borderColor: color,
-                    backgroundColor: type === 'area'
-                        ? (context: any) => {
-                            const ctx = context.chart.ctx;
-                            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-                            gradient.addColorStop(0, `${color}CC`);
-                            gradient.addColorStop(1, `${color}1A`);
-                            return gradient;
-                        }
-                        : 'transparent',
-                    borderWidth: 3,
-                    fill: type === 'area',
-                    tension: 0.4,
-                    pointRadius: 4,
-                    pointBackgroundColor: color,
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointHoverRadius: 6,
-                    pointHoverBackgroundColor: color,
-                    pointHoverBorderColor: '#fff',
-                    pointHoverBorderWidth: 2,
-                },
-            ],
-        };
-
-        const lineOptions: ChartOptions<'line'> = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false,
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(17, 24, 39, 0.95)',
-                    titleColor: '#e5e7eb',
-                    bodyColor: '#60a5fa',
-                    borderColor: '#374151',
-                    borderWidth: 1,
-                    padding: 12,
-                    displayColors: false,
-                    callbacks: {
-                        label: function (context) {
-                            const value = context.parsed.y;
-                            if (value === null) return '';
-                            return `Value: ${value.toFixed(2)}ms`;
-                        }
-                    }
-                },
-            },
-            scales: {
-                x: {
-                    grid: {
-                        display: true,
-                        color: 'rgba(55, 65, 81, 0.3)',
-                        drawTicks: false,
-                    },
-                    ticks: {
-                        color: '#9ca3af',
-                        font: {
-                            size: 11,
-                        },
-                    },
-                    border: {
-                        display: false,
-                    },
-                },
-                y: {
-                    grid: {
-                        display: true,
-                        color: 'rgba(55, 65, 81, 0.3)',
-                        drawTicks: false,
-                    },
-                    ticks: {
-                        color: '#9ca3af',
-                        font: {
-                            size: 11,
-                        },
-                    },
-                    border: {
-                        display: false,
-                    },
-                },
-            },
-        };
-
-        return <Line data={chartData} options={lineOptions} />;
+    if (type === 'line') {
+        return (
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data} {...chartConfig}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+                    <XAxis
+                        dataKey="name"
+                        stroke="#9ca3af"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                    />
+                    <YAxis
+                        stroke="#9ca3af"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => formatValue(value)}
+                    />
+                    <Tooltip
+                        content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                                return (
+                                    <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                        <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                        <p className="text-purple-400 text-sm font-bold">{formatValue(payload[0].value as number)}</p>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        }}
+                    />
+                    <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke={color}
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 6, fill: color }}
+                    />
+                </LineChart>
+            </ResponsiveContainer>
+        );
     }
 
-    // Default to bar chart
-    const defaultData = {
-        labels,
-        datasets: [
-            {
-                label: 'Value',
-                data: values,
-                backgroundColor: color,
-                borderRadius: 6,
-            },
-        ],
-    };
+    // Area chart (default)
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} {...chartConfig}>
+                <defs>
+                    <linearGradient id={`gradient-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={color} stopOpacity={0} />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+                <XAxis
+                    dataKey="name"
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                />
+                <YAxis
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => formatValue(value)}
+                />
+                <Tooltip
+                    content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                            return (
+                                <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                    <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                    <p className="text-emerald-400 text-sm font-bold">{formatValue(payload[0].value as number)}</p>
+                                </div>
+                            );
+                        }
+                        return null;
+                    }}
+                />
+                <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={color}
+                    strokeWidth={2}
+                    fill={`url(#gradient-${color.replace('#', '')})`}
+                />
+            </AreaChart>
+        </ResponsiveContainer>
+    );
+}
 
-    const defaultOptions: ChartOptions<'bar'> = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                display: false,
-            },
-        },
-    };
+const handleClick = (data: any) => {
+    if (onItemClick && data && data.activePayload && data.activePayload[0]) {
+        onItemClick(data.activePayload[0].payload);
+    }
+};
 
-    return <Bar data={defaultData} options={defaultOptions} />;
+const chartConfig = {
+    margin: { top: 5, right: 5, left: -20, bottom: 5 },
+};
+
+if (type === 'bar') {
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} {...chartConfig} onClick={handleClick}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+                <XAxis
+                    dataKey="name"
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
+                />
+                <YAxis
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => `${value}ms`}
+                />
+                <Tooltip
+                    content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                            return (
+                                <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                    <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                    <p className="text-blue-400 text-sm font-bold">{payload[0].value}ms</p>
+                                </div>
+                            );
+                        }
+                        return null;
+                    }}
+                />
+                <Bar
+                    dataKey="value"
+                    fill={color}
+                    radius={[6, 6, 0, 0]}
+                    className={onItemClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
+                />
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+if (type === 'area') {
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} {...chartConfig}>
+                <defs>
+                    <linearGradient id={`gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity={0.8} />
+                        <stop offset="95%" stopColor={color} stopOpacity={0.1} />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+                <XAxis
+                    dataKey="name"
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                />
+                <YAxis
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => `${value}ms`}
+                />
+                <Tooltip
+                    content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                            return (
+                                <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                    <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                    <p className="text-green-400 text-sm font-bold">{payload[0].value}ms</p>
+                                </div>
+                            );
+                        }
+                        return null;
+                    }}
+                />
+                <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={color}
+                    strokeWidth={2}
+                    fill={`url(#gradient-${color})`}
+                />
+            </AreaChart>
+        </ResponsiveContainer>
+    );
+}
+
+// Default line chart
+return (
+    <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} {...chartConfig}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+            <XAxis
+                dataKey="name"
+                stroke="#9ca3af"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+            />
+            <YAxis
+                stroke="#9ca3af"
+                fontSize={11}
+                tickLine={false}
+                axisLine={false}
+            />
+            <Tooltip
+                content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                        return (
+                            <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                <p className="text-blue-400 text-sm font-bold">{payload[0].value}ms</p>
+                            </div>
+                        );
+                    }
+                    return null;
+                }}
+            />
+            <Line
+                type="monotone"
+                dataKey="value"
+                stroke={color}
+                strokeWidth={2}
+                dot={{ fill: color, r: 4 }}
+            />
+        </LineChart>
+    </ResponsiveContainer>
+);
 }

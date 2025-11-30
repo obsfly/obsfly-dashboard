@@ -29,6 +29,10 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Get("/api/dashboard/traces", h.GetSlowTraces)
 	r.Get("/api/dashboard/patterns", h.GetLogPatterns)
 	r.Get("/api/dashboard/hotspots", h.GetInfraHotspots)
+
+	// Service-specific endpoints
+	r.Get("/api/service/{serviceName}/metrics", h.GetServiceMetrics)
+	r.Get("/api/service/{serviceName}/traces", h.GetServiceTraces)
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -134,6 +138,33 @@ func (h *Handler) GetServicePerformance(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) GetLogVolume(w http.ResponseWriter, r *http.Request) {
 	accountId, minutesAgo := getQueryParams(r)
 	data, err := h.store.GetLogVolume(r.Context(), accountId, minutesAgo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+// Service-specific handlers
+func (h *Handler) GetServiceMetrics(w http.ResponseWriter, r *http.Request) {
+	serviceName := chi.URLParam(r, "serviceName")
+	accountId, minutesAgo := getQueryParams(r)
+
+	data, err := h.store.GetServiceMetrics(r.Context(), accountId, serviceName, minutesAgo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) GetServiceTraces(w http.ResponseWriter, r *http.Request) {
+	serviceName := chi.URLParam(r, "serviceName")
+	accountId, minutesAgo := getQueryParams(r)
+
+	data, err := h.store.GetServiceTraces(r.Context(), accountId, serviceName, minutesAgo)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

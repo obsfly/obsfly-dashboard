@@ -291,3 +291,111 @@ func (s *Store) GetInfraHotspots(ctx context.Context, accountId uint64, minutesA
 
 	return results, nil
 }
+
+// ServiceMetrics represents detailed metrics for a specific service
+type ServiceMetrics struct {
+	AvgResponseTime float64 `json:"avg_response_time"` // in milliseconds
+	RequestRate     float64 `json:"request_rate"`      // requests per minute
+	ErrorRate       float64 `json:"error_rate"`        // percentage
+	Throughput      float64 `json:"throughput"`        // requests per second
+	Status          string  `json:"status"`            // Healthy, Warning, Critical
+	Instances       uint64  `json:"instances"`
+	Version         string  `json:"version"`
+	Uptime          float64 `json:"uptime"`       // in hours
+	MemoryUsage     float64 `json:"memory_usage"` // in MB
+}
+
+func (s *Store) GetServiceMetrics(ctx context.Context, accountId uint64, serviceName string, minutesAgo int) (*ServiceMetrics, error) {
+	query := `
+		SELECT
+			avgIf(Value * 1000, MetricName = 'container_http_requests_duration_seconds_total') as avg_response_time,
+			sumIf(Value, MetricName = 'container_http_requests_total') / ? as request_rate,
+			countIf(MetricName = 'container_http_requests_total' AND Labels['status'] >= '400') / 
+				nullIf(countIf(MetricName = 'container_http_requests_total'), 0) * 100 as error_rate,
+			sumIf(Value, MetricName = 'container_http_requests_total') / (? * 60) as throughput,
+			uniqExact(Pod) as instances,
+			anyIf(Labels['version'], MetricName = 'container_info' AND mapContains(Labels, 'version')) as version,
+			maxIf(Value, MetricName = 'container_uptime_seconds') / 3600 as uptime,
+			maxIf(Value, MetricName = 'container_resources_memory_rss_bytes') / 1024 / 1024 as memory_usage
+		FROM metrics.metrics_v1
+		WHERE AccountId = ?
+		  AND ServiceName = ?
+		  AND Timestamp > now() - INTERVAL ? MINUTE
+	`
+
+	var metrics ServiceMetrics
+	err := s.conn.QueryRow(ctx, query, minutesAgo, minutesAgo, accountId, serviceName, minutesAgo).Scan(
+		&metrics.AvgResponseTime,
+		&metrics.RequestRate,
+		&metrics.ErrorRate,
+		&metrics.Throughput,
+		&metrics.Instances,
+		&metrics.Version,
+		&metrics.Uptime,
+		&metrics.MemoryUsage,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service metrics: %w", err)
+	}
+
+	// Determine status based on metrics
+	if metrics.ErrorRate > 5 || metrics.AvgResponseTime > 1000 {
+		metrics.Status = "Critical"
+	} else if metrics.ErrorRate > 1 || metrics.AvgResponseTime > 500 {
+		metrics.Status = "Warning"
+	} else {
+		metrics.Status = "Healthy"
+	}
+
+	// Handle empty version
+	if metrics.Version == "" {
+		metrics.Version = "unknown"
+	}
+
+	return &metrics, nil
+}
+
+// ServiceTrace represents a trace for a specific service
+type ServiceTrace struct {
+	TraceId    string  `json:"trace_id"`
+	Operation  string  `json:"operation"`
+	Duration   float64 `json:"duration"` // in seconds
+	StatusCode string  `json:"status_code"`
+	Timestamp  string  `json:"timestamp"`
+}
+
+func (s *Store) GetServiceTraces(ctx context.Context, accountId uint64, serviceName string, minutesAgo int) ([]ServiceTrace, error) {
+	query := `
+		SELECT
+			Labels['trace_id'] as trace_id,
+			Labels['operation'] as operation,
+			max(Value) as duration,
+			Labels['status'] as status_code,
+			toString(max(Timestamp)) as timestamp
+		FROM metrics.metrics_v1
+		WHERE MetricName = 'container_http_requests_duration_seconds_total'
+		  AND AccountId = ?
+		  AND ServiceName = ?
+		  AND Timestamp > now() - INTERVAL ? MINUTE
+		  AND mapContains(Labels, 'trace_id')
+		GROUP BY trace_id, operation, status_code
+		ORDER BY duration DESC
+		LIMIT 10
+	`
+
+	rows, err := s.conn.Query(ctx, query, accountId, serviceName, minutesAgo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []ServiceTrace
+	for rows.Next() {
+		var t ServiceTrace
+		if err := rows.Scan(&t.TraceId, &t.Operation, &t.Duration, &t.StatusCode, &t.Timestamp); err != nil {
+			return nil, err
+		}
+		results = append(results, t)
+	}
+	return results, nil
+}
