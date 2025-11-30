@@ -1,6 +1,6 @@
 'use client';
 
-import { ThemeProvider } from '../contexts/ThemeContext';
+
 import { Sidebar } from './Sidebar';
 import { useState, useEffect } from 'react';
 
@@ -30,16 +30,14 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <ThemeProvider>
-            <div className="flex">
-                <Sidebar />
-                <div
-                    className={`flex-1 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-56'
-                        }`}
-                >
-                    {children}
-                </div>
+        <div className="flex">
+            <Sidebar />
+            <div
+                className={`flex-1 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-56'
+                    }`}
+            >
+                {children}
             </div>
-        </ThemeProvider>
+        </div>
     );
 }

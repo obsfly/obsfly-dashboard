@@ -59,7 +59,7 @@ export function HoneycombGrid({ cells }: HoneycombGridProps) {
                             y={y}
                             textAnchor="middle"
                             dominantBaseline="middle"
-                            className="text-[8px] fill-gray-300 dark:fill-gray-300 light:fill-gray-700 font-mono pointer-events-none"
+                            className="text-[8px] fill-gray-700 dark:fill-gray-300 font-mono pointer-events-none"
                         >
                             {cell.label.length > 8 ? cell.label.substring(0, 8) + '...' : cell.label}
                         </text>
