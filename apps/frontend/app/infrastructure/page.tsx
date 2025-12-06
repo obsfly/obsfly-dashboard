@@ -181,7 +181,7 @@ function InfrastructureContent() {
 
     // Prepare honeycomb cells - show up to 1000 nodes
     const honeycombCells = allNodes.slice(0, 1000).map(node => ({
-        id: node.id,
+        id: node.hostname,
         label: node.hostname,  // Show full hostname
         status: node.status,
         tooltip: `${node.hostname}\nCPU: ${node.cpu_usage}%\nMemory: ${node.memory_usage_percent}%`
@@ -372,8 +372,8 @@ function InfrastructureContent() {
                                     ) : (
                                         paginatedNodes.map((node) => (
                                             <tr
-                                                key={node.id}
-                                                onClick={() => handleNodeClick(node.id)}
+                                                key={node.hostname}
+                                                onClick={() => handleNodeClick(node.hostname)}
                                                 className="hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
                                             >
                                                 <td className="px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300 font-semibold">{node.hostname}</td>
