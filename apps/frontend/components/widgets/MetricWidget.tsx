@@ -13,7 +13,6 @@ interface MetricWidgetProps {
 }
 
 export function MetricWidget({
-    id,
     title,
     value,
     icon: Icon,
@@ -45,8 +44,8 @@ export function MetricWidget({
                 {change && (
                     <p
                         className={`text-xs mt-1 ${changeType === 'positive'
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400'
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
                             }`}
                     >
                         {change}

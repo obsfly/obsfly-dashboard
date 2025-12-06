@@ -14,7 +14,6 @@ interface ChartWidgetProps {
 }
 
 export function ChartWidget({
-    id,
     title,
     chartType,
     color,

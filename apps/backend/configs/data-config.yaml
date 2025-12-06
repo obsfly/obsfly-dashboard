@@ -1,0 +1,48 @@
+nodes:
+  total: 100
+  aws_ec2_count: 50
+  aws_cloud_count: 50
+
+services:
+  min_per_node: 4
+  max_per_node: 10
+  languages:
+    - go
+    - python
+    - nodejs
+    - java
+    - rust
+    - dotnet
+    - ruby
+    - php
+
+generation:
+  interval_seconds: 10
+  account_id: 1
+  retention_days: 1  # TTL: auto-delete data older than 1 day
+
+metrics:
+  cpu_range: [10, 95]
+  memory_range: [20, 90]
+  disk_range: [15, 85]
+  network_range: [100, 5000]  # MB/s
+
+traces:
+  slow_threshold_ms: 500
+  error_rate: 0.2  # 20% errors
+  operations:
+    - "GET /api/v1/users"
+    - "POST /api/v1/orders"
+    - "GET /api/v1/products"
+    - "PUT /api/v1/settings"
+    - "DELETE /api/v1/items"
+    - "POST /api/v1/auth/login"
+    - "GET /api/v1/dashboard"
+    - "PATCH /api/v1/profile"
+
+clickhouse:
+  host: "localhost"
+  port: 9000
+  database: "observability"
+  username: "default"
+  password: ""

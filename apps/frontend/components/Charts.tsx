@@ -5,18 +5,22 @@ import { Bar, BarChart, Line, LineChart, Area, AreaChart, CartesianGrid, XAxis, 
 interface DataPoint {
     name: string;
     value: number;
-    [key: string]: any;
+    [key: string]: string | number;
 }
+
+import { FullScreenChart } from './FullScreenChart';
 
 interface ChartProps {
     data: DataPoint[];
     color?: string;
     type?: 'line' | 'bar' | 'area';
     onItemClick?: (item: DataPoint) => void;
-    unit?: string; // Add unit parameter for proper tooltip formatting
+    unit?: string;
+    showMaximize?: boolean;
 }
 
-export function SimpleChart({ data, color = '#8b5cf6', type = 'bar', onItemClick, unit = '' }: ChartProps) {
+export function SimpleChart({ data, color = '#8b5cf6', type = 'bar', onItemClick, unit = '', showMaximize = true }: ChartProps) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleClick = (data: any) => {
         if (onItemClick && data && data.activePayload && data.activePayload[0]) {
             onItemClick(data.activePayload[0].payload);
@@ -33,9 +37,9 @@ export function SimpleChart({ data, color = '#8b5cf6', type = 'bar', onItemClick
         return `${value.toFixed(1)}${unit}`;
     };
 
-    if (type === 'bar') {
-        return (
-            <ResponsiveContainer width="100%" height="100%">
+    const ChartContent = (
+        <ResponsiveContainer width="100%" height="100%">
+            {type === 'bar' ? (
                 <BarChart data={data} {...chartConfig} onClick={handleClick}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
                     <XAxis
@@ -75,13 +79,7 @@ export function SimpleChart({ data, color = '#8b5cf6', type = 'bar', onItemClick
                         className="cursor-pointer"
                     />
                 </BarChart>
-            </ResponsiveContainer>
-        );
-    }
-
-    if (type === 'line') {
-        return (
-            <ResponsiveContainer width="100%" height="100%">
+            ) : type === 'line' ? (
                 <LineChart data={data} {...chartConfig}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
                     <XAxis
@@ -120,205 +118,73 @@ export function SimpleChart({ data, color = '#8b5cf6', type = 'bar', onItemClick
                         activeDot={{ r: 6, fill: color }}
                     />
                 </LineChart>
-            </ResponsiveContainer>
-        );
-    }
-
-    // Area chart (default)
-    return (
-        <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} {...chartConfig}>
-                <defs>
-                    <linearGradient id={`gradient-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={color} stopOpacity={0} />
-                    </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
-                <XAxis
-                    dataKey="name"
-                    stroke="#9ca3af"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                />
-                <YAxis
-                    stroke="#9ca3af"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => formatValue(value)}
-                />
-                <Tooltip
-                    content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                            return (
-                                <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
-                                    <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
-                                    <p className="text-emerald-400 text-sm font-bold">{formatValue(payload[0].value as number)}</p>
-                                </div>
-                            );
-                        }
-                        return null;
-                    }}
-                />
-                <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke={color}
-                    strokeWidth={2}
-                    fill={`url(#gradient-${color.replace('#', '')})`}
-                />
-            </AreaChart>
+            ) : (
+                <AreaChart data={data} {...chartConfig}>
+                    <defs>
+                        <linearGradient id={`gradient-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={color} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={color} stopOpacity={0} />
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
+                    <XAxis
+                        dataKey="name"
+                        stroke="#9ca3af"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                    />
+                    <YAxis
+                        stroke="#9ca3af"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => formatValue(value)}
+                    />
+                    <Tooltip
+                        content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                                return (
+                                    <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+                                        <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
+                                        <p className="text-emerald-400 text-sm font-bold">{formatValue(payload[0].value as number)}</p>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        }}
+                    />
+                    <Area
+                        type="monotone"
+                        dataKey="value"
+                        stroke={color}
+                        strokeWidth={2}
+                        fill={`url(#gradient-${color.replace('#', '')})`}
+                    />
+                </AreaChart>
+            )}
         </ResponsiveContainer>
+    );
+
+    return (
+        <div className="relative w-full h-full group">
+            {showMaximize && (
+                <div className="absolute top-0 right-0 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <FullScreenChart title="Chart View">
+                        <SimpleChart
+                            data={data}
+                            color={color}
+                            type={type}
+                            onItemClick={onItemClick}
+                            unit={unit}
+                            showMaximize={false}
+                        />
+                    </FullScreenChart>
+                </div>
+            )}
+            {ChartContent}
+        </div>
     );
 }
 
-const handleClick = (data: any) => {
-    if (onItemClick && data && data.activePayload && data.activePayload[0]) {
-        onItemClick(data.activePayload[0].payload);
-    }
-};
 
-const chartConfig = {
-    margin: { top: 5, right: 5, left: -20, bottom: 5 },
-};
-
-if (type === 'bar') {
-    return (
-        <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} {...chartConfig} onClick={handleClick}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
-                <XAxis
-                    dataKey="name"
-                    stroke="#9ca3af"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
-                />
-                <YAxis
-                    stroke="#9ca3af"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => `${value}ms`}
-                />
-                <Tooltip
-                    content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                            return (
-                                <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
-                                    <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
-                                    <p className="text-blue-400 text-sm font-bold">{payload[0].value}ms</p>
-                                </div>
-                            );
-                        }
-                        return null;
-                    }}
-                />
-                <Bar
-                    dataKey="value"
-                    fill={color}
-                    radius={[6, 6, 0, 0]}
-                    className={onItemClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
-                />
-            </BarChart>
-        </ResponsiveContainer>
-    );
-}
-
-if (type === 'area') {
-    return (
-        <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} {...chartConfig}>
-                <defs>
-                    <linearGradient id={`gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity={0.8} />
-                        <stop offset="95%" stopColor={color} stopOpacity={0.1} />
-                    </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
-                <XAxis
-                    dataKey="name"
-                    stroke="#9ca3af"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                />
-                <YAxis
-                    stroke="#9ca3af"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => `${value}ms`}
-                />
-                <Tooltip
-                    content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                            return (
-                                <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
-                                    <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
-                                    <p className="text-green-400 text-sm font-bold">{payload[0].value}ms</p>
-                                </div>
-                            );
-                        }
-                        return null;
-                    }}
-                />
-                <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke={color}
-                    strokeWidth={2}
-                    fill={`url(#gradient-${color})`}
-                />
-            </AreaChart>
-        </ResponsiveContainer>
-    );
-}
-
-// Default line chart
-return (
-    <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} {...chartConfig}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(55, 65, 81, 0.3)" vertical={false} />
-            <XAxis
-                dataKey="name"
-                stroke="#9ca3af"
-                fontSize={11}
-                tickLine={false}
-                axisLine={false}
-            />
-            <YAxis
-                stroke="#9ca3af"
-                fontSize={11}
-                tickLine={false}
-                axisLine={false}
-            />
-            <Tooltip
-                content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                        return (
-                            <div className="bg-gray-900/95 border border-gray-700 rounded-lg px-3 py-2 shadow-lg">
-                                <p className="text-gray-300 text-xs font-medium">{payload[0].payload.name}</p>
-                                <p className="text-blue-400 text-sm font-bold">{payload[0].value}ms</p>
-                            </div>
-                        );
-                    }
-                    return null;
-                }}
-            />
-            <Line
-                type="monotone"
-                dataKey="value"
-                stroke={color}
-                strokeWidth={2}
-                dot={{ fill: color, r: 4 }}
-            />
-        </LineChart>
-    </ResponsiveContainer>
-);
-}

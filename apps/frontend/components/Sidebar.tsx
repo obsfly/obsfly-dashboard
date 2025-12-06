@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutDashboard, Server, Activity, FileText, Shield, Bell, Settings, ChevronLeft, ChevronRight, Sun, Moon, Gauge, BarChart3, Route, Flame } from 'lucide-react';
+import { LayoutDashboard, Server, Activity, FileText, Shield, Bell, Settings, ChevronLeft, ChevronRight, Sun, Moon, Gauge, BarChart3, Route, Flame, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
@@ -8,13 +8,13 @@ import { useTheme } from 'next-themes';
 
 interface SubMenuItem {
     name: string;
-    icon: any;
+    icon: LucideIcon;
     href: string;
 }
 
 interface MenuItem {
     name: string;
-    icon: any;
+    icon: LucideIcon;
     href: string;
     badge?: string;
     subItems?: SubMenuItem[];
@@ -46,8 +46,11 @@ export function Sidebar() {
     const [mounted, setMounted] = useState(false);
     const [hoveredItem, setHoveredItem] = useState<string | null>(null);
     const { theme, setTheme } = useTheme();
+    // const theme: string = 'light'; // temporary mock
+    // const setTheme = (_t: string) => { }; // temporary mock
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
         const stored = localStorage.getItem('sidebar-collapsed');
         if (stored) {

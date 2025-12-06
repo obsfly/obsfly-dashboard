@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,23 +17,33 @@ import (
 )
 
 func main() {
-	// Configuration (should be env vars)
-	chAddr := os.Getenv("CLICKHOUSE_ADDR")
-	if chAddr == "" {
-		chAddr = "localhost:9000"
+	// Configuration from environment
+	chHost := os.Getenv("CLICKHOUSE_HOST")
+	if chHost == "" {
+		chHost = "localhost"
 	}
+	chPort := os.Getenv("CLICKHOUSE_PORT")
+	if chPort == "" {
+		chPort = "9000"
+	}
+	chAddr := fmt.Sprintf("%s:%s", chHost, chPort)
+
 	chUser := os.Getenv("CLICKHOUSE_USER")
 	if chUser == "" {
 		chUser = "default"
 	}
 	chPassword := os.Getenv("CLICKHOUSE_PASSWORD")
+	chDB := os.Getenv("CLICKHOUSE_DB")
+	if chDB == "" {
+		chDB = "default"
+	}
 
 	// Connect to ClickHouse
 	// Retry logic for startup
 	var s *store.Store
 	var err error
 	for i := 0; i < 10; i++ {
-		s, err = store.NewStore(chAddr, "default", chUser, chPassword)
+		s, err = store.NewStore(chAddr, chDB, chUser, chPassword)
 		if err == nil {
 			break
 		}
@@ -44,20 +55,53 @@ func main() {
 	}
 	log.Println("Connected to ClickHouse")
 
-	// Start Data Generator (only in dev mode)
-	env := os.Getenv("ENV")
-	if env == "" {
-		env = "dev"
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if env == "dev" {
-		log.Println("Starting data generator (dev mode)")
-		go generator.StartGenerating(ctx, s)
+	// Start Embedded Data Generator (if enabled and in dev mode)
+	env := os.Getenv("ENV")
+	if env == "" {
+		env = "dev" // Default to dev if not set
+	}
+
+	enableGenerator := os.Getenv("ENABLE_DATA_GENERATOR")
+	if enableGenerator == "" {
+		enableGenerator = "true"
+	}
+
+	if (env == "dev" || env == "development") && enableGenerator == "true" {
+		log.Println("Starting embedded data generator (dev mode)...")
+
+		configPath := os.Getenv("DATA_CONFIG_PATH")
+		if configPath == "" {
+			configPath = "./configs/data-config.yaml"
+		}
+
+		cfg, err := generator.LoadConfig(configPath)
+		if err != nil {
+			log.Printf("Warning: Could not load data config: %v. Using defaults.", err)
+			// Create minimal default config
+			cfg = &generator.Config{}
+			cfg.Nodes.Total = 100
+			cfg.Nodes.AwsEc2Count = 50
+			cfg.Nodes.AwsCloudCount = 50
+			cfg.Services.MinPerNode = 4
+			cfg.Services.MaxPerNode = 10
+			cfg.Services.Languages = []string{"go", "python", "nodejs", "java", "rust", "dotnet", "ruby", "php"}
+			cfg.Generation.IntervalSeconds = 10
+			cfg.Generation.AccountID = 1
+			cfg.Metrics.CPURange = [2]int{10, 90}
+			cfg.Metrics.MemoryRange = [2]int{20, 80}
+			cfg.Metrics.DiskRange = [2]int{10, 70}
+			cfg.Metrics.NetworkRange = [2]int{1, 100}
+			cfg.Traces.ErrorRate = 0.05
+			cfg.Traces.SlowThresholdMs = 500
+		}
+
+		dataGen := generator.NewDataGenerator(cfg, s)
+		go dataGen.Start(ctx)
 	} else {
-		log.Println("Skipping data generator (production mode)")
+		log.Printf("Data generator disabled (ENV=%s, ENABLE_DATA_GENERATOR=%s)", env, enableGenerator)
 	}
 
 	// Setup API

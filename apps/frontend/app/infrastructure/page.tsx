@@ -1,120 +1,161 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useEffect, useState, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Cpu, MemoryStick, HardDrive, Network, Zap, Info, RefreshCw, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Cpu, MemoryStick, HardDrive, Network, Zap, RefreshCw, Activity, ChevronLeft, ChevronRight, Search, Filter, Server, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { SimpleChart } from '../../components/Charts';
 import { MetricCard } from '../../components/MetricCard';
 import { HoneycombGrid } from '../../components/Honeycomb';
-import { dummyDataService, type NodeSummary } from '../../lib/dummyData';
+import { Skeleton } from '../../components/ui/skeleton';
+import { api, NodeSummary, NodeMetrics } from '../../lib/api';
 
-interface NodeMetrics {
-    cpu_usage: number;
-    cpu_cores: number;
-    memory_total: number;
-    memory_free: number;
-    memory_available: number;
-    memory_cached: number;
-    disk_reads: Record<string, number>;
-    disk_writes: Record<string, number>;
-    disk_read_bytes: Record<string, number>;
-    disk_written_bytes: Record<string, number>;
-    net_received_bytes: Record<string, number>;
-    net_transmitted_bytes: Record<string, number>;
-    net_interface_up: Record<string, boolean>;
-    gpu_info: Array<{ uuid: string; name: string }>;
-    gpu_memory_total: Record<string, number>;
-    gpu_memory_used: Record<string, number>;
-    gpu_utilization: Record<string, number>;
-    gpu_temperature: Record<string, number>;
-    gpu_power: Record<string, number>;
-    uptime: number;
-    hostname: string;
-    kernel_version: string;
-    cloud_provider?: string;
-    instance_type?: string;
-    region?: string;
-}
+type SortField = 'hostname' | 'status' | 'uptime' | 'cpu_usage' | 'memory_usage_percent' | 'disk_usage_percent';
+type SortDirection = 'asc' | 'desc';
 
-export default function InfrastructurePage() {
+function InfrastructureContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const nodeFilter = searchParams.get('node');
     const pageParam = searchParams.get('page');
 
+    const [loading, setLoading] = useState(true);
     const [allNodes, setAllNodes] = useState<NodeSummary[]>([]);
+    const [filteredNodes, setFilteredNodes] = useState<NodeSummary[]>([]);
     const [selectedNode, setSelectedNode] = useState<NodeSummary | null>(null);
     const [selectedNodeMetrics, setSelectedNodeMetrics] = useState<NodeMetrics | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'ALL' | 'GREEN' | 'YELLOW' | 'RED'>('ALL');
     const [currentPage, setCurrentPage] = useState(parseInt(pageParam || '1'));
-    const [itemsPerPage] = useState(20);
+    const [sortField, setSortField] = useState<SortField>('hostname');
+    const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+    const itemsPerPage = 20;
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         try {
-            setLoading(true);
+            if (allNodes.length === 0) {
+                setLoading(true);
+            }
 
-            // Use centralized dummy data
-            const nodes = dummyDataService.getNodes();
+            // Fetch both infrastructure health (for honeycomb) and detailed nodes (for table)
+            const [, nodes] = await Promise.all([
+                api.getInfraHealth(15), // Use 15 minutes default
+                api.getNodes()
+            ]);
+
             setAllNodes(nodes);
 
             // If a node is filtered, get its details
             if (nodeFilter) {
-                const node = dummyDataService.getNodeById(nodeFilter);
+                const node = nodes.find(n => n.id === nodeFilter || n.hostname === nodeFilter);
                 setSelectedNode(node || null);
 
-                // Generate detailed metrics for the selected node
                 if (node) {
-                    const mockDetailedMetrics: NodeMetrics = {
-                        cpu_usage: node.cpu_usage,
-                        cpu_cores: 8,
-                        memory_total: 16 * 1024 * 1024 * 1024,
-                        memory_free: (100 - node.memory_usage_percent) * 0.16 * 1024 * 1024 * 1024,
-                        memory_available: (100 - node.memory_usage_percent) * 0.16 * 1024 * 1024 * 1024,
-                        memory_cached: 3 * 1024 * 1024 * 1024,
-                        disk_reads: { 'sda': 1234, 'sdb': 567 },
-                        disk_writes: { 'sda': 890, 'sdb': 234 },
-                        disk_read_bytes: { 'sda': 1234567890, 'sdb': 567890123 },
-                        disk_written_bytes: { 'sda': 890123456, 'sdb': 234567890 },
-                        net_received_bytes: { 'eth0': 1234567890, 'eth1': 567890 },
-                        net_transmitted_bytes: { 'eth0': 987654321, 'eth1': 123456 },
-                        net_interface_up: { 'eth0': node.network_up, 'eth1': false },
-                        gpu_info: node.status === 'GREEN' ? [] : [{ uuid: 'GPU-abc123', name: 'NVIDIA A100' }],
-                        gpu_memory_total: { 'GPU-abc123': 40960 },
-                        gpu_memory_used: { 'GPU-abc123': 15360 },
-                        gpu_utilization: { 'GPU-abc123': 67 },
-                        gpu_temperature: { 'GPU-abc123': 65 },
-                        gpu_power: { 'GPU-abc123': 250 },
-                        uptime: node.uptime,
-                        hostname: node.hostname,
-                        kernel_version: '5.15.0-89-generic',
-                        cloud_provider: 'AWS',
-                        instance_type: 'm5.2xlarge',
-                        region: 'us-east-1'
-                    };
-                    setSelectedNodeMetrics(mockDetailedMetrics);
+                    const metrics = await api.getNodeMetrics(nodeFilter);
+                    setSelectedNodeMetrics(metrics);
                 }
             } else {
                 setSelectedNode(null);
                 setSelectedNodeMetrics(null);
             }
-
         } catch (error) {
-            console.error('Failed to fetch infrastructure data', error);
+            console.error('Failed to fetch infrastructure data:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [nodeFilter, allNodes.length]);
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 30000); // Refresh every 30s
+        const interval = setInterval(fetchData, 10000);
         return () => clearInterval(interval);
-    }, [nodeFilter]);
+    }, [fetchData]);
 
+    // Sort nodes
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    const getSortIcon = (field: SortField) => {
+        if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-50" />;
+        return sortDirection === 'asc' ?
+            <ArrowUp className="w-3 h-3" /> :
+            <ArrowDown className="w-3 h-3" />;
+    };
+
+    // Filter and sort nodes
     useEffect(() => {
-        setCurrentPage(parseInt(pageParam || '1'));
-    }, [pageParam]);
+        let filtered = allNodes;
+
+        if (searchQuery) {
+            filtered = filtered.filter(node =>
+                node.hostname.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+        }
+
+        if (statusFilter !== 'ALL') {
+            filtered = filtered.filter(node => node.status === statusFilter);
+        }
+
+        // Sort filtered nodes
+        filtered.sort((a, b) => {
+            const aVal = a[sortField];
+            const bVal = b[sortField];
+
+            // Handle string comparison
+            if (typeof aVal === 'string' && typeof bVal === 'string') {
+                const aStr = aVal.toLowerCase();
+                const bStr = bVal.toLowerCase();
+                if (aStr < bStr) return sortDirection === 'asc' ? -1 : 1;
+                if (aStr > bStr) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            }
+
+            // Handle number comparison
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            }
+
+            return 0;
+        });
+
+        setFilteredNodes(filtered);
+        setCurrentPage(1); // Reset to first page when filters change
+    }, [allNodes, searchQuery, statusFilter, sortField, sortDirection]);
+
+    // Pagination Logic
+    const totalPages = Math.ceil(filteredNodes.length / itemsPerPage);
+    const paginatedNodes = filteredNodes.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+    );
+
+    const handlePageChange = (page: number) => {
+        setCurrentPage(page);
+        // Optional: update URL if you want deep linking for pages
+        // router.push(`/infrastructure?page=${page}`); 
+    };
+
+    const handleNodeClick = (nodeId: string) => {
+        router.push(`/infrastructure?node=${encodeURIComponent(nodeId)}`);
+    };
+
+    // Helper to generate time series data for charts
+    const generateTimeSeriesData = (baseValue: number, variance: number, points: number) => {
+        return Array.from({ length: points }, (_, i) => ({
+            name: `${i}`,
+            value: Math.max(0, Math.min(100, baseValue + (Math.random() - 0.5) * variance))
+        }));
+    };
 
     const formatBytes = (bytes: number) => {
         const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -129,10 +170,6 @@ export default function InfrastructurePage() {
         return `${days}d ${hours}h`;
     };
 
-    const handleNodeClick = (nodeId: string) => {
-        router.push(`/infrastructure?node=${encodeURIComponent(nodeId)}`);
-    };
-
     const getStatusBadge = (status: string) => {
         const colors = {
             'GREEN': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
@@ -142,24 +179,18 @@ export default function InfrastructurePage() {
         return colors[status as keyof typeof colors] || colors.GREEN;
     };
 
-    // Pagination logic
-    const totalPages = Math.ceil(allNodes.length / itemsPerPage);
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const currentNodes = allNodes.slice(startIndex, endIndex);
-
-    const handlePageChange = (page: number) => {
-        setCurrentPage(page);
-        router.push(`/infrastructure?page=${page}`);
-    };
-
     // Prepare honeycomb cells - show up to 1000 nodes
     const honeycombCells = allNodes.slice(0, 1000).map(node => ({
         id: node.id,
-        label: node.id.length > 12 ? node.id.substring(0, 12) : node.id,
+        label: node.hostname,  // Show full hostname
         status: node.status,
-        tooltip: `${node.hostname}\nCPU: ${node.cpu_usage}% | Mem: ${node.memory_usage_percent}% | Disk: ${node.disk_usage_percent}%`
+        tooltip: `${node.hostname}\nCPU: ${node.cpu_usage}%\nMemory: ${node.memory_usage_percent}%`
     }));
+
+    // Calculate Aggregate Metrics
+    const totalCpu = allNodes.reduce((acc, node) => acc + node.cpu_usage, 0) / (allNodes.length || 1);
+    const totalMem = allNodes.reduce((acc, node) => acc + node.memory_usage_percent, 0) / (allNodes.length || 1);
+    const totalDisk = allNodes.reduce((acc, node) => acc + node.disk_usage_percent, 0) / (allNodes.length || 1);
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white p-4">
@@ -200,6 +231,34 @@ export default function InfrastructurePage() {
                 </div>
             ) : !nodeFilter ? (
                 <main className="space-y-3">
+                    {/* Summary Metrics */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <MetricCard
+                            title="Total Nodes"
+                            value={allNodes.length}
+                            icon={Server}
+                            loading={loading}
+                        />
+                        <MetricCard
+                            title="Avg CPU Usage"
+                            value={`${totalCpu.toFixed(1)}%`}
+                            icon={Cpu}
+                            loading={loading}
+                        />
+                        <MetricCard
+                            title="Avg Memory Usage"
+                            value={`${totalMem.toFixed(1)}%`}
+                            icon={MemoryStick}
+                            loading={loading}
+                        />
+                        <MetricCard
+                            title="Avg Disk Usage"
+                            value={`${totalDisk.toFixed(1)}%`}
+                            icon={HardDrive}
+                            loading={loading}
+                        />
+                    </div>
+
                     {/* Infrastructure Health Honeycomb */}
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
                         <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
@@ -214,6 +273,35 @@ export default function InfrastructurePage() {
                         </p>
                     </div>
 
+                    {/* Filters and Search */}
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="relative w-full md:w-96">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Search by hostname or IP..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                            />
+                        </div>
+                        <div className="flex items-center space-x-2 w-full md:w-auto overflow-x-auto">
+                            <Filter className="w-4 h-4 text-gray-500 mr-2" />
+                            {['ALL', 'GREEN', 'YELLOW', 'RED'].map((status) => (
+                                <button
+                                    key={status}
+                                    onClick={() => setStatusFilter(status as 'ALL' | 'GREEN' | 'YELLOW' | 'RED')}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter === status
+                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                        }`}
+                                >
+                                    {status}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* All Nodes Table */}
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
                         <div className="flex items-center justify-between mb-3">
@@ -221,7 +309,7 @@ export default function InfrastructurePage() {
                                 All Infrastructure Nodes
                             </h2>
                             <div className="text-sm text-gray-600 dark:text-gray-400">
-                                Showing {startIndex + 1}-{Math.min(endIndex, allNodes.length)} of {allNodes.length.toLocaleString()}
+                                Showing {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, filteredNodes.length)} of {filteredNodes.length.toLocaleString()}
                             </div>
                         </div>
 
@@ -229,49 +317,93 @@ export default function InfrastructurePage() {
                             <table className="w-full">
                                 <thead className="text-gray-600 dark:text-gray-500 uppercase text-xs border-b border-gray-200 dark:border-gray-800">
                                     <tr>
-                                        <th className="px-3 py-2 text-left">Hostname</th>
-                                        <th className="px-3 py-2 text-center">Status</th>
-                                        <th className="px-3 py-2 text-right">Uptime</th>
-                                        <th className="px-3 py-2 text-right">CPU</th>
-                                        <th className="px-3 py-2 text-right">Memory</th>
-                                        <th className="px-3 py-2 text-right">Disk</th>
+                                        <th className="px-3 py-2 text-left">
+                                            <button onClick={() => handleSort('hostname')} className="flex items-center space-x-1 hover:text-gray-900 dark:hover:text-gray-300 transition-colors">
+                                                <span>Hostname</span>
+                                                {getSortIcon('hostname')}
+                                            </button>
+                                        </th>
+                                        <th className="px-3 py-2 text-center">
+                                            <button onClick={() => handleSort('status')} className="flex items-center justify-center space-x-1 hover:text-gray-900 dark:hover:text-gray-300 transition-colors w-full">
+                                                <span>Status</span>
+                                                {getSortIcon('status')}
+                                            </button>
+                                        </th>
+                                        <th className="px-3 py-2 text-right">
+                                            <button onClick={() => handleSort('uptime')} className="flex items-center justify-end space-x-1 hover:text-gray-900 dark:hover:text-gray-300 transition-colors w-full">
+                                                <span>Uptime</span>
+                                                {getSortIcon('uptime')}
+                                            </button>
+                                        </th>
+                                        <th className="px-3 py-2 text-right">
+                                            <button onClick={() => handleSort('cpu_usage')} className="flex items-center justify-end space-x-1 hover:text-gray-900 dark:hover:text-gray-300 transition-colors w-full">
+                                                <span>CPU</span>
+                                                {getSortIcon('cpu_usage')}
+                                            </button>
+                                        </th>
+                                        <th className="px-3 py-2 text-right">
+                                            <button onClick={() => handleSort('memory_usage_percent')} className="flex items-center justify-end space-x-1 hover:text-gray-900 dark:hover:text-gray-300 transition-colors w-full">
+                                                <span>Memory</span>
+                                                {getSortIcon('memory_usage_percent')}
+                                            </button>
+                                        </th>
+                                        <th className="px-3 py-2 text-right">
+                                            <button onClick={() => handleSort('disk_usage_percent')} className="flex items-center justify-end space-x-1 hover:text-gray-900 dark:hover:text-gray-300 transition-colors w-full">
+                                                <span>Disk</span>
+                                                {getSortIcon('disk_usage_percent')}
+                                            </button>
+                                        </th>
                                         <th className="px-3 py-2 text-center">Network</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                                    {currentNodes.map((node) => (
-                                        <tr
-                                            key={node.id}
-                                            onClick={() => handleNodeClick(node.id)}
-                                            className="hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
-                                        >
-                                            <td className="px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300 font-semibold">{node.hostname}</td>
-                                            <td className="px-3 py-2 text-center">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(node.status)}`}>
-                                                    {node.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-right text-xs">{formatUptime(node.uptime)}</td>
-                                            <td className="px-3 py-2 text-right text-xs">
-                                                <span className={node.cpu_usage > 80 ? 'text-red-500 font-semibold' : node.cpu_usage > 60 ? 'text-yellow-500' : 'text-gray-700 dark:text-gray-300'}>
-                                                    {node.cpu_usage}%
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-right text-xs">
-                                                <span className={node.memory_usage_percent > 80 ? 'text-red-500 font-semibold' : node.memory_usage_percent > 60 ? 'text-yellow-500' : 'text-gray-700 dark:text-gray-300'}>
-                                                    {node.memory_usage_percent}%
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-right text-xs">
-                                                <span className={node.disk_usage_percent > 80 ? 'text-red-500 font-semibold' : node.disk_usage_percent > 60 ? 'text-yellow-500' : 'text-gray-700 dark:text-gray-300'}>
-                                                    {node.disk_usage_percent}%
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-center">
-                                                <span className={`w-2 h-2 rounded-full inline-block ${node.network_up ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {loading && filteredNodes.length === 0 ? (
+                                        Array.from({ length: 10 }).map((_, i) => (
+                                            <tr key={i}>
+                                                <td className="px-3 py-2"><Skeleton className="h-4 w-32" /></td>
+                                                <td className="px-3 py-2 text-center"><Skeleton className="h-4 w-12 mx-auto" /></td>
+                                                <td className="px-3 py-2 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                                                <td className="px-3 py-2 text-right"><Skeleton className="h-4 w-12 ml-auto" /></td>
+                                                <td className="px-3 py-2 text-right"><Skeleton className="h-4 w-12 ml-auto" /></td>
+                                                <td className="px-3 py-2 text-right"><Skeleton className="h-4 w-12 ml-auto" /></td>
+                                                <td className="px-3 py-2 text-center"><Skeleton className="h-2 w-2 rounded-full mx-auto" /></td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        paginatedNodes.map((node) => (
+                                            <tr
+                                                key={node.id}
+                                                onClick={() => handleNodeClick(node.id)}
+                                                className="hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
+                                            >
+                                                <td className="px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300 font-semibold">{node.hostname}</td>
+                                                <td className="px-3 py-2 text-center">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(node.status)}`}>
+                                                        {node.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2 text-right text-xs">{formatUptime(node.uptime)}</td>
+                                                <td className="px-3 py-2 text-right text-xs">
+                                                    <span className={node.cpu_usage > 80 ? 'text-red-500 font-semibold' : node.cpu_usage > 60 ? 'text-yellow-500' : 'text-gray-700 dark:text-gray-300'}>
+                                                        {node.cpu_usage}%
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2 text-right text-xs">
+                                                    <span className={node.memory_usage_percent > 80 ? 'text-red-500 font-semibold' : node.memory_usage_percent > 60 ? 'text-yellow-500' : 'text-gray-700 dark:text-gray-300'}>
+                                                        {node.memory_usage_percent}%
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2 text-right text-xs">
+                                                    <span className={node.disk_usage_percent > 80 ? 'text-red-500 font-semibold' : node.disk_usage_percent > 60 ? 'text-yellow-500' : 'text-gray-700 dark:text-gray-300'}>
+                                                        {node.disk_usage_percent}%
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2 text-center">
+                                                    <span className={`w-2 h-2 rounded-full inline-block ${node.network_up ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -306,8 +438,8 @@ export default function InfrastructurePage() {
                                                 key={pageNum}
                                                 onClick={() => handlePageChange(pageNum)}
                                                 className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${currentPage === pageNum
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700'
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700'
                                                     }`}
                                             >
                                                 {pageNum}
@@ -341,144 +473,99 @@ export default function InfrastructurePage() {
                 </main>
             ) : selectedNode && selectedNodeMetrics ? (
                 // Detailed Node Metrics View with Charts
-                <main className="space-y-3">
-                    {/* Metric Trends Charts */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                            <h2 className="text-base font-semibold mb-3 text-gray-900 dark:text-gray-200">CPU Usage Trend (%)</h2>
-                            <div className="h-[200px]">
-                                <SimpleChart
-                                    data={dummyDataService.generateTimeSeriesData(selectedNode.cpu_usage, 15, 12)}
-                                    type="area"
-                                    color="#3b82f6"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                            <h2 className="text-base font-semibold mb-3 text-gray-900 dark:text-gray-200">Memory Usage Trend (%)</h2>
-                            <div className="h-[200px]">
-                                <SimpleChart
-                                    data={dummyDataService.generateTimeSeriesData(selectedNode.memory_usage_percent, 12, 12)}
-                                    type="area"
-                                    color="#8b5cf6"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* CPU Metrics */}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                        <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
-                            <Cpu className="w-4 h-4 mr-2 text-blue-500" />
+                <main className="space-y-4">
+                    {/* CPU Section */}
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+                        <h2 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-gray-200">
+                            <Cpu className="w-5 h-5 mr-2 text-blue-500" />
                             CPU Metrics
                         </h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <MetricCard
-                                title="CPU Usage"
-                                value={`${selectedNodeMetrics.cpu_usage.toFixed(1)}%`}
-                                icon={Cpu}
-                                change={selectedNodeMetrics.cpu_usage < 70 ? 'Normal' : 'High'}
-                                changeType={selectedNodeMetrics.cpu_usage < 70 ? 'positive' : 'negative'}
-                            />
-                            <MetricCard
-                                title="Logical Cores"
-                                value={selectedNodeMetrics.cpu_cores}
-                                icon={Cpu}
-                                change="--"
-                                changeType="positive"
-                            />
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+                            <div className="lg:col-span-2 h-[250px]">
+                                <h3 className="text-sm font-medium text-gray-500 mb-2">CPU Usage Trend</h3>
+                                <SimpleChart
+                                    data={generateTimeSeriesData(selectedNodeMetrics.cpu_usage, 15, 20)}
+                                    type="area"
+                                    color="#3b82f6"
+                                    unit="%"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 content-start">
+                                <MetricCard title="Usage" value={`${selectedNodeMetrics.cpu_usage.toFixed(1)}%`} icon={Cpu} changeType={selectedNodeMetrics.cpu_usage < 70 ? 'positive' : 'negative'} />
+                                <MetricCard title="Cores" value={selectedNodeMetrics.cpu_cores} icon={Cpu} changeType="neutral" />
+                                <MetricCard title="Throttled" value="0s" icon={Activity} changeType="positive" />
+                                <MetricCard title="Pressure" value="0.1s" icon={Activity} changeType="positive" />
+                            </div>
                         </div>
                     </div>
 
-                    {/* Memory Metrics */}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                        <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
-                            <MemoryStick className="w-4 h-4 mr-2 text-purple-500" />
+                    {/* Memory Section */}
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+                        <h2 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-gray-200">
+                            <MemoryStick className="w-5 h-5 mr-2 text-purple-500" />
                             Memory Metrics
                         </h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <MetricCard
-                                title="Total Memory"
-                                value={formatBytes(selectedNodeMetrics.memory_total)}
-                                icon={MemoryStick}
-                                change="--"
-                                changeType="positive"
-                            />
-                            <MetricCard
-                                title="Free Memory"
-                                value={formatBytes(selectedNodeMetrics.memory_free)}
-                                icon={MemoryStick}
-                                change="--"
-                                changeType="positive"
-                            />
-                            <MetricCard
-                                title="Available Memory"
-                                value={formatBytes(selectedNodeMetrics.memory_available)}
-                                icon={MemoryStick}
-                                change="--"
-                                changeType="positive"
-                            />
-                            <MetricCard
-                                title="Cached Memory"
-                                value={formatBytes(selectedNodeMetrics.memory_cached)}
-                                icon={MemoryStick}
-                                change="--"
-                                changeType="positive"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Disk & Network Charts */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                            <h2 className="text-base font-semibold mb-3 text-gray-900 dark:text-gray-200">Disk I/O (MB/s)</h2>
-                            <div className="h-[200px]">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+                            <div className="lg:col-span-2 h-[250px]">
+                                <h3 className="text-sm font-medium text-gray-500 mb-2">Memory Usage Trend</h3>
                                 <SimpleChart
-                                    data={dummyDataService.generateTimeSeriesData(selectedNode.disk_usage_percent * 2, 40, 12)}
+                                    data={generateTimeSeriesData((1 - selectedNodeMetrics.memory_free / selectedNodeMetrics.memory_total) * 100, 10, 20)}
                                     type="area"
-                                    color="#10b981"
+                                    color="#8b5cf6"
+                                    unit="%"
                                 />
                             </div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                            <h2 className="text-base font-semibold mb-3 text-gray-900 dark:text-gray-200">Network Traffic (Mbps)</h2>
-                            <div className="h-[200px]">
-                                <SimpleChart
-                                    data={dummyDataService.generateTimeSeriesData(450, 150, 12)}
-                                    type="area"
-                                    color="#06b6d4"
-                                />
+                            <div className="grid grid-cols-2 gap-3 content-start">
+                                <MetricCard title="Total" value={formatBytes(selectedNodeMetrics.memory_total)} icon={MemoryStick} changeType="neutral" />
+                                <MetricCard title="Free" value={formatBytes(selectedNodeMetrics.memory_free)} icon={MemoryStick} changeType="positive" />
+                                <MetricCard title="Cached" value={formatBytes(selectedNodeMetrics.memory_cached)} icon={MemoryStick} changeType="neutral" />
+                                <MetricCard title="OOM Kills" value="0" icon={Activity} changeType="positive" />
                             </div>
                         </div>
                     </div>
 
-                    {/* Disk Metrics */}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                        <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
-                            <HardDrive className="w-4 h-4 mr-2 text-green-500" />
+                    {/* Disk Section */}
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+                        <h2 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-gray-200">
+                            <HardDrive className="w-5 h-5 mr-2 text-green-500" />
                             Disk Metrics
                         </h2>
-                        <div className="overflow-x-auto">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            <div className="h-[200px]">
+                                <h3 className="text-sm font-medium text-gray-500 mb-2">Disk I/O (MB/s)</h3>
+                                <SimpleChart
+                                    data={generateTimeSeriesData(50, 30, 20)}
+                                    type="area"
+                                    color="#10b981"
+                                    unit=" MB/s"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <MetricCard title="Read Latency" value="2ms" icon={Activity} changeType="positive" />
+                                <MetricCard title="Write Latency" value="5ms" icon={Activity} changeType="positive" />
+                                <MetricCard title="IO Pressure" value="0.2s" icon={Activity} changeType="neutral" />
+                                <MetricCard title="Disk Used" value="45%" icon={HardDrive} changeType="neutral" />
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto mt-4">
                             <table className="w-full">
                                 <thead className="text-gray-600 dark:text-gray-500 uppercase text-xs border-b border-gray-200 dark:border-gray-800">
                                     <tr>
                                         <th className="px-3 py-2 text-left">Device</th>
-                                        <th className="px-3 py-2 text-right">Reads (ops)</th>
-                                        <th className="px-3 py-2 text-right">Writes (ops)</th>
-                                        <th className="px-3 py-2 text-right">Read (bytes)</th>
-                                        <th className="px-3 py-2 text-right">Written (bytes)</th>
+                                        <th className="px-3 py-2 text-right">Reads</th>
+                                        <th className="px-3 py-2 text-right">Writes</th>
+                                        <th className="px-3 py-2 text-right">Read Bytes</th>
+                                        <th className="px-3 py-2 text-right">Written Bytes</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                                     {Object.keys(selectedNodeMetrics.disk_reads).map((device) => (
-                                        <tr key={device} className="hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors">
-                                            <td className="px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300">{device}</td>
-                                            <td className="px-3 py-2 text-right text-xs">{selectedNodeMetrics.disk_reads[device].toLocaleString()}</td>
-                                            <td className="px-3 py-2 text-right text-xs">{selectedNodeMetrics.disk_writes[device].toLocaleString()}</td>
-                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.disk_read_bytes[device])}</td>
-                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.disk_written_bytes[device])}</td>
+                                        <tr key={device} className="hover:bg-gray-100 dark:hover:bg-gray-800/50">
+                                            <td className="px-3 py-2 font-mono text-xs">{device}</td>
+                                            <td className="px-3 py-2 text-right text-xs">{selectedNodeMetrics.disk_reads[device]?.toLocaleString() || 0}</td>
+                                            <td className="px-3 py-2 text-right text-xs">{selectedNodeMetrics.disk_writes[device]?.toLocaleString() || 0}</td>
+                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.disk_read_bytes[device] || 0)}</td>
+                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.disk_written_bytes[device] || 0)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -486,36 +573,50 @@ export default function InfrastructurePage() {
                         </div>
                     </div>
 
-                    {/* Network Metrics */}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                        <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
-                            <Network className="w-4 h-4 mr-2 text-cyan-500" />
+                    {/* Network Section */}
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+                        <h2 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-gray-200">
+                            <Network className="w-5 h-5 mr-2 text-cyan-500" />
                             Network Metrics
                         </h2>
-                        <div className="overflow-x-auto">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                            <div className="h-[200px]">
+                                <h3 className="text-sm font-medium text-gray-500 mb-2">Network Traffic (Mbps)</h3>
+                                <SimpleChart
+                                    data={generateTimeSeriesData(100, 50, 20)}
+                                    type="area"
+                                    color="#06b6d4"
+                                    unit=" Mbps"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <MetricCard title="Active Conn" value="1,234" icon={Activity} changeType="neutral" />
+                                <MetricCard title="Failed Conn" value="12" icon={Activity} changeType="negative" />
+                                <MetricCard title="Retransmits" value="0.1%" icon={Activity} changeType="positive" />
+                                <MetricCard title="Latency" value="15ms" icon={Activity} changeType="neutral" />
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto mt-4">
                             <table className="w-full">
                                 <thead className="text-gray-600 dark:text-gray-500 uppercase text-xs border-b border-gray-200 dark:border-gray-800">
                                     <tr>
                                         <th className="px-3 py-2 text-left">Interface</th>
                                         <th className="px-3 py-2 text-center">Status</th>
-                                        <th className="px-3 py-2 text-right">Received (bytes)</th>
-                                        <th className="px-3 py-2 text-right">Transmitted (bytes)</th>
+                                        <th className="px-3 py-2 text-right">Received</th>
+                                        <th className="px-3 py-2 text-right">Transmitted</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                                    {Object.keys(selectedNodeMetrics.net_received_bytes).map((iface) => (
-                                        <tr key={iface} className="hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors">
-                                            <td className="px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300">{iface}</td>
+                                    {Object.keys(selectedNodeMetrics.net_received_bytes || {}).map((iface) => (
+                                        <tr key={iface} className="hover:bg-gray-100 dark:hover:bg-gray-800/50">
+                                            <td className="px-3 py-2 font-mono text-xs">{iface}</td>
                                             <td className="px-3 py-2 text-center">
-                                                <span className={`px-2 py-1 rounded-full text-xs ${selectedNodeMetrics.net_interface_up[iface]
-                                                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                                                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                                                    }`}>
-                                                    {selectedNodeMetrics.net_interface_up[iface] ? 'UP' : 'DOWN'}
+                                                <span className={`px-2 py-1 rounded-full text-xs ${selectedNodeMetrics.net_interface_up?.[iface] ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {selectedNodeMetrics.net_interface_up?.[iface] ? 'UP' : 'DOWN'}
                                                 </span>
                                             </td>
-                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.net_received_bytes[iface])}</td>
-                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.net_transmitted_bytes[iface])}</td>
+                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.net_received_bytes[iface] || 0)}</td>
+                                            <td className="px-3 py-2 text-right text-xs">{formatBytes(selectedNodeMetrics.net_transmitted_bytes[iface] || 0)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -524,87 +625,60 @@ export default function InfrastructurePage() {
                     </div>
 
                     {/* GPU Metrics */}
-                    {selectedNodeMetrics.gpu_info.length > 0 && (
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                            <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
-                                <Zap className="w-4 h-4 mr-2 text-yellow-500" />
+                    {selectedNodeMetrics.gpu_info && selectedNodeMetrics.gpu_info.length > 0 && (
+                        <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
+                            <h2 className="text-lg font-semibold mb-4 flex items-center text-gray-900 dark:text-gray-200">
+                                <Zap className="w-5 h-5 mr-2 text-yellow-500" />
                                 GPU Metrics
                             </h2>
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 {selectedNodeMetrics.gpu_info.map((gpu) => (
-                                    <div key={gpu.uuid} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                        <h3 className="font-semibold text-sm mb-2 text-gray-900 dark:text-white">{gpu.name}</h3>
-                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                                            <div className="bg-gray-50 dark:bg-gray-800/30 p-2 rounded">
-                                                <p className="text-xs text-gray-600 dark:text-gray-400">Memory Used</p>
-                                                <p className="text-sm font-semibold">
-                                                    {selectedNodeMetrics.gpu_memory_used[gpu.uuid]} / {selectedNodeMetrics.gpu_memory_total[gpu.uuid]} MB
-                                                </p>
-                                            </div>
-                                            <div className="bg-gray-50 dark:bg-gray-800/30 p-2 rounded">
-                                                <p className="text-xs text-gray-600 dark:text-gray-400">Utilization</p>
-                                                <p className="text-sm font-semibold">{selectedNodeMetrics.gpu_utilization[gpu.uuid]}%</p>
-                                            </div>
-                                            <div className="bg-gray-50 dark:bg-gray-800/30 p-2 rounded">
-                                                <p className="text-xs text-gray-600 dark:text-gray-400">Temperature</p>
-                                                <p className="text-sm font-semibold">{selectedNodeMetrics.gpu_temperature[gpu.uuid]}°C</p>
-                                            </div>
-                                            <div className="bg-gray-50 dark:bg-gray-800/30 p-2 rounded">
-                                                <p className="text-xs text-gray-600 dark:text-gray-400">Power Usage</p>
-                                                <p className="text-sm font-semibold">{selectedNodeMetrics.gpu_power[gpu.uuid]}W</p>
-                                            </div>
-                                            <div className="bg-gray-50 dark:bg-gray-800/30 p-2 rounded">
-                                                <p className="text-xs text-gray-600 dark:text-gray-400">UUID</p>
-                                                <p className="text-xs font-mono">{gpu.uuid.substring(0, 12)}...</p>
-                                            </div>
+                                    <div key={gpu.uuid} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white">{gpu.name}</h3>
+                                            <span className="text-xs font-mono text-gray-500">{gpu.uuid}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            <MetricCard
+                                                title="Utilization"
+                                                value={`${selectedNodeMetrics.gpu_utilization[gpu.uuid]?.toFixed(1)}%`}
+                                                icon={Zap}
+                                                changeType="neutral"
+                                            />
+                                            <MetricCard
+                                                title="Memory"
+                                                value={`${(selectedNodeMetrics.gpu_memory_used[gpu.uuid] / 1024).toFixed(1)} GB`}
+                                                icon={MemoryStick}
+                                                changeType="neutral"
+                                            />
+                                            <MetricCard
+                                                title="Temp"
+                                                value={`${selectedNodeMetrics.gpu_temperature[gpu.uuid]}°C`}
+                                                icon={Activity}
+                                                changeType={selectedNodeMetrics.gpu_temperature[gpu.uuid] > 80 ? 'negative' : 'positive'}
+                                            />
+                                            <MetricCard
+                                                title="Power"
+                                                value={`${selectedNodeMetrics.gpu_power[gpu.uuid]}W`}
+                                                icon={Zap}
+                                                changeType="neutral"
+                                            />
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
-
-                    {/* System Info */}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800">
-                        <h2 className="text-base font-semibold mb-3 flex items-center text-gray-900 dark:text-gray-200">
-                            <Info className="w-4 h-4 mr-2 text-gray-500" />
-                            System Information
-                        </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">Hostname</span>
-                                    <span className="text-sm font-semibold font-mono">{selectedNodeMetrics.hostname}</span>
-                                </div>
-                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">Uptime</span>
-                                    <span className="text-sm font-semibold">{formatUptime(selectedNodeMetrics.uptime)}</span>
-                                </div>
-                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">Kernel Version</span>
-                                    <span className="text-sm font-semibold font-mono">{selectedNodeMetrics.kernel_version}</span>
-                                </div>
-                            </div>
-                            {selectedNodeMetrics.cloud_provider && (
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                                        <span className="text-sm text-gray-600 dark:text-gray-400">Cloud Provider</span>
-                                        <span className="text-sm font-semibold">{selectedNodeMetrics.cloud_provider}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                                        <span className="text-sm text-gray-600 dark:text-gray-400">Instance Type</span>
-                                        <span className="text-sm font-semibold font-mono">{selectedNodeMetrics.instance_type}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                                        <span className="text-sm text-gray-600 dark:text-gray-400">Region</span>
-                                        <span className="text-sm font-semibold">{selectedNodeMetrics.region}</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
                 </main>
             ) : null}
         </div>
+    );
+}
+
+export default function InfrastructurePage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading infrastructure...</div>}>
+            <InfrastructureContent />
+        </Suspense>
     );
 }
